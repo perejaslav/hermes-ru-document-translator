@@ -5,15 +5,11 @@ from typing import Optional
 
 
 WRAPPER_PATTERNS = [
-    r"^(Вот |Вот перевод:|Here('s)?( the)? translation:?\s*)",
-    r"^(Certainly!?\s*)",
-    r"^(Of course!?\s*)",
-    r"^(Here is (the )?translation:?\s*)",
-    r"^(Translation:?\s*)",
-    r"^(Sure,?\s*(here('s)?)?( the)?)",
-    r"^(Пожалуйста,?\s*)",
-    r"^(Certainly,?\s*(here('s)?)?( the)?)",
-    r"```(markdown|yaml|text)\n",
+    r"^(Вот |Вот перевод:|Пожалуйста,?\s*)",
+    r"^(Here('s)? ?(is)? ?the? ?translation:?\s*)",
+    r"^(Certainly|Of course|Sure)[,!]?\s*",
+    r"^(Translation:\s*)",
+    r"```(markdown|yaml|text|python|)\n",
     r"```\n",
 ]
 
@@ -43,12 +39,13 @@ def sanitize_subagent_output(output: str, chunk_id: str = "?") -> tuple[str, lis
         if text != before:
             warnings.append(f"Stripped wrapper pattern: {regex.pattern[:40]}...")
 
-    # Remove markdown fences at start/end
-    if text.startswith("```") and text.count("```") >= 2:
-        # Remove opening fence
-        text = re.sub(r'^```[^\n]*\n', '', text, count=1)
-        # Remove closing fence
-        text = re.sub(r'\n```\s*$', '', text)
+    # Remove markdown fences at start/end (handles fenced code blocks)
+    # Opening fence
+    text = re.sub(r'^```[^\n]*\n', '', text)
+    # Closing fence (handles ``` on its own line at end)
+    text = re.sub(r'\n```\s*$', '', text)
+    # Also handle stray closing fences without leading newline
+    text = re.sub(r'\s*```\s*$', '', text)
 
     # Strip any remaining leading/trailing newlines
     text = text.strip()
