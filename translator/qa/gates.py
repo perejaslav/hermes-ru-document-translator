@@ -62,6 +62,13 @@ def run_all_gates(project_dir: Path) -> dict:
         all_passed = False
     total_warnings += g5.get("warnings", 0)
 
+    # Gate 6 — Completeness (structural + reference parity)
+    g6 = _gate_completeness(project_dir, manifest, wave2_dir)
+    results["gate6_completeness"] = g6
+    if g6["status"] != "PASS":
+        all_passed = False
+    total_warnings += g6.get("warnings", 0)
+
     # Write individual gate reports
     qa_dir = project_dir / "qa"
     qa_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +78,7 @@ def run_all_gates(project_dir: Path) -> dict:
     _write_gate_report(qa_dir / "gate3_style.md", g3)
     _write_gate_report(qa_dir / "gate4_fluency.md", g4)
     _write_gate_report(qa_dir / "gate5_formatting.md", g5)
+    _write_gate_report(qa_dir / "gate6_completeness.md", g6)
 
     # Write remediation.json
     remediation = _build_remediation(results, manifest)
@@ -288,6 +296,154 @@ def _gate_formatting(project_dir: Path, manifest: dict, wave2_dir: Path) -> dict
         "chunks_checked": len(manifest["chunks"]),
         "issues_found": len(issues),
         "details": issues[:10],
+    }
+
+
+def _gate_completeness(project_dir: Path, manifest: dict, wave2_dir: Path) -> dict:
+    """Check structural completeness — compression ratio, reference parity, headers.
+
+    Flags chunks where the subagent summarised instead of translating:
+    - Compression ratio below 50% (chars)
+    - Reference loss > 30%
+    - Plain-text headers from source missing in translation
+    """
+    issues = []
+    total_source_chars = 0
+    total_trans_chars = 0
+    total_source_refs = 0
+    total_trans_refs = 0
+    severe_count = 0
+
+    # Load canonical source to detect plain-text headers
+    canonical_path = project_dir / "chunks" / "source" / "canonical.md"
+    plain_headers: list[str] = []
+    if canonical_path.exists():
+        canon = canonical_path.read_text(encoding='utf-8')
+        # Match lines that look like plain-text section headers (capitalized, standalone)
+        plain_headers = re.findall(r'^([A-Z][A-Za-z\s/]{2,60})$', canon, re.MULTILINE)
+        plain_headers = [h.strip() for h in plain_headers if len(h.strip()) > 3]
+
+    # Load merged translation
+    merged_path = project_dir / "output" / "translated.md"
+    merged_text = ""
+    if merged_path.exists():
+        merged_text = merged_path.read_text(encoding='utf-8')
+        merged_text = re.sub(r'^---\n.*?\n---\n', '', merged_text, flags=re.DOTALL).strip()
+
+    # Check per-chunk completeness
+    for chunk_meta in manifest["chunks"]:
+        chunk_id = chunk_meta["id"]
+        src_path = project_dir / "chunks" / "source" / f"{chunk_id}.md"
+        tr_path = wave2_dir / f"{chunk_id}.md"
+
+        if not src_path.exists() or not tr_path.exists():
+            continue
+
+        src = src_path.read_text(encoding='utf-8')
+        src = re.sub(r'^---\n.*?\n---\n', '', src, flags=re.DOTALL).strip()
+
+        tr = tr_path.read_text(encoding='utf-8')
+        tr = re.sub(r'^---\n.*?\n---\n', '', tr, flags=re.DOTALL).strip()
+
+        src_chars = len(src)
+        tr_chars = len(tr)
+        total_source_chars += src_chars
+        total_trans_chars += tr_chars
+
+        src_refs = len(re.findall(r'\[\d+\]', src))
+        tr_refs = len(re.findall(r'\[\d+\]', tr))
+        total_source_refs += src_refs
+        total_trans_refs += tr_refs
+
+        ratio = tr_chars / src_chars if src_chars > 0 else 1.0
+        if ratio < 0.5:
+            severe_count += 1
+            ref_note = f", refs {src_refs}→{tr_refs}" if tr_refs < src_refs * 0.7 else ""
+            issues.append(
+                f"{chunk_id}: compression {ratio:.0%} (src={src_chars} → tr={tr_chars} chars{ref_note})"
+            )
+
+    # Global structural checks
+    overall_ratio = total_trans_chars / total_source_chars if total_source_chars > 0 else 1.0
+    if overall_ratio < 0.6:
+        issues.append(
+            f"OVERALL: translation is {overall_ratio:.0%} of source size "
+            f"({total_source_chars} → {total_trans_chars} chars). "
+            "Subagent likely summarised."
+        )
+
+    ref_ratio = total_trans_refs / total_source_refs if total_source_refs > 0 else 1.0
+    if ref_ratio < 0.7:
+        issues.append(
+            f"REFERENCE LOSS: {total_source_refs} → {total_trans_refs} references "
+            f"({ref_ratio:.0%} retained). Content likely dropped."
+        )
+
+    # Plain-text header preservation
+    if plain_headers and merged_text:
+        missing_headers = []
+        known_translations = {
+            "background": ["Предыстория", "Предпосылки"],
+            "etymology": ["Этимология"],
+            "geography": ["География"],
+            "history": ["История"],
+            "economy": ["Экономика"],
+            "trade": ["Торговля"],
+            "society": ["Общество"],
+            "government": ["Государство", "Управление"],
+            "religion": ["Религия"],
+            "legacy": ["Наследие"],
+            "language": ["Язык"],
+            "writing": ["Письменность"],
+            "art": ["Искусство"],
+            "architecture": ["Архитектура"],
+            "research": ["Исследования"],
+            "sculpture": ["Скульптура"],
+            "iconography": ["Иконография"],
+            "inscriptions": ["Надписи"],
+            "seals": ["Печати"],
+        }
+
+        for h in plain_headers:
+            h_lower = h.lower().strip()
+            # Check if original header appears in translation
+            if h.strip() in merged_text:
+                continue
+            # Check known translations
+            found = False
+            for eng_word, ru_options in known_translations.items():
+                if eng_word in h_lower:
+                    for ru_opt in ru_options:
+                        if ru_opt in merged_text:
+                            found = True
+                            break
+                if found:
+                    break
+            if not found:
+                missing_headers.append(h)
+
+        if missing_headers:
+            issues.append(
+                f"HEADERS LOST: {len(missing_headers)} plain-text section headers "
+                f"not found in translation: {', '.join(missing_headers[:8])}"
+            )
+
+    # Determine status
+    if severe_count > 0:
+        status = "FAIL" if severe_count >= 3 else "WARN"
+    elif len(issues) == 0:
+        status = "PASS"
+    else:
+        status = "WARN"
+
+    return {
+        "status": status,
+        "total_chunks": len(manifest["chunks"]),
+        "compressed_chunks": severe_count,
+        "overall_ratio": round(overall_ratio, 2),
+        "ref_ratio": round(ref_ratio, 2),
+        "issues_found": len(issues),
+        "details": issues[:15],
     }
 
 
