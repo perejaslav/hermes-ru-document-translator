@@ -225,8 +225,8 @@ QA не блокирует pipeline — результаты идут в `qa/rem
 | Backend | Назначение |
 |---|---|
 | `mock` | Оффлайн-тестирование, deterministic, всегда работает |
-| `hermes_delegate` | Параллельный перевод через delegate_task (основной) |
-| `minimax_api` | Direct MiniMax API fallback (stub) |
+| `hermes_delegate` | Hermes runtime-only / experimental (не запускается через `python scripts/run_pipeline.py`) |
+| `minimax_api` | Direct MiniMax API backend (experimental/stub, зависит от сборки) |
 | `sequential` | Однопоточный fallback для безопасного тестирования |
 
 ### Sanitizer
@@ -238,7 +238,17 @@ QA не блокирует pipeline — результаты идут в `qa/rem
 - **CJK-контаминация:** детектируется (threshold 2%). При превышении в выходной файл добавляется `<!-- WARNING -->` комментарий. Текст не удаляется, чтобы не ломать легитимный мультиязычный контент.
 - **Whitespace normalization:** после удаления блоков множественные пустые строки схлопываются.
 
-Для тестирования: `--backend mock`. Для прода: default (hermes_delegate).
+Для тестирования: `--backend mock`.
+
+Для production CLI-запуска не используйте `mock`. Указывайте рабочий прямой backend явно, например `--backend minimax_api`, когда он настроен и проходит healthcheck.
+
+`hermes_delegate` является Hermes runtime-only / experimental backend: он не предназначен для обычного запуска через `python scripts/run_pipeline.py`, потому что зависит от Hermes Agent runtime.
+
+В текущей версии `minimax_api` может быть experimental/stub в зависимости от установленной сборки. Перед использованием обязательно проверяйте `doctor` и backend healthcheck.
+
+### Repair safety
+
+`repair` без `--backend` берёт backend из manifest.json (chunk-level `wave2_backend` или project-level `translation.wave2_backend`). Если backend неизвестен, команда откажется работать, чтобы не перезаписать реальный перевод mock-результатом. Для тестов можно явно указать `repair <slug> --backend mock`.
 
 ---
 
