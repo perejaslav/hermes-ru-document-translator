@@ -25,10 +25,10 @@ jobs:
       - name: Install package with dev dependencies
         run: |
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip install pytest PyMuPDF python-docx beautifulsoup4 lxml markdown-it-py html2text chardet
 
       - name: Run doctor
-        run: PYTHONPATH=. .venv/bin/python scripts/run_pipeline.py doctor
+        run: .venv/bin/python scripts/run_pipeline.py doctor
 
       - name: Run pytest
-        run: PYTHONPATH=. .venv/bin/pytest
+        run: .venv/bin/pytest
