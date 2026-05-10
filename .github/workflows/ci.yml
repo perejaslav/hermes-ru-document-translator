@@ -26,7 +26,11 @@ jobs:
         run: .venv/bin/pip install --upgrade pip pytest PyMuPDF python-docx beautifulsoup4 lxml markdown-it-py html2text chardet
 
       - name: Run doctor
-        run: PYTHONPATH=. .venv/bin/python ./scripts/run_pipeline.py doctor
+        run: |
+          set -x
+          pwd
+          ls translator/
+          PYTHONPATH=. .venv/bin/python scripts/run_pipeline.py doctor
 
       - name: Run pytest
         run: PYTHONPATH=. .venv/bin/pytest ./tests/
