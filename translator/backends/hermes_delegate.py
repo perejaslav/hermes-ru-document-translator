@@ -126,6 +126,7 @@ class HermesDelegateBackend(TranslationBackend):
         entities: str | None = None,
         previous_context: str | None = None,
         next_context: str | None = None,
+        draft_translation: str | None = None,
         remediation_notes: str | None = None,
     ) -> BackendResult:
         """Translate a single chunk via Hermes subagent.
@@ -139,13 +140,15 @@ class HermesDelegateBackend(TranslationBackend):
             entities: Entity register content.
             previous_context: Last 2 sentences of previous chunk.
             next_context: First 2 sentences of next chunk.
+            draft_translation: Wave 1 result (required for wave 2).
             remediation_notes: For repair — issues to fix.
 
         Returns:
             BackendResult with cleaned translation and metadata.
 
         Raises:
-            RuntimeError: If Hermes runtime is unavailable.
+            RuntimeError: If Hermes runtime is unavailable, or wave 2
+                          called without draft_translation.
         """
         if not is_hermes_runtime_available():
             raise RuntimeError(
@@ -155,6 +158,14 @@ class HermesDelegateBackend(TranslationBackend):
                 "Do not use:\n"
                 "  python scripts/run_pipeline.py ... --backend hermes_delegate\n\n"
                 "outside Hermes runtime."
+            )
+
+        # ── Fail-fast: wave 2 requires draft ───────────────────────────
+        if wave == 2 and not remediation_notes and not draft_translation:
+            raise RuntimeError(
+                f"Wave 2 refinement requires draft_translation for {chunk_id}. "
+                "ParallelTranslator must read wave1 output and pass it as "
+                "draft_translation to the backend."
             )
 
         from hermes_tools import delegate_task
@@ -167,14 +178,10 @@ class HermesDelegateBackend(TranslationBackend):
         else:
             template_name = "wave2_refinement"
 
-        draft_translation = None
-        if wave == 2 and not remediation_notes:
-            draft_translation = ""
-
         prompt = _build_prompt(
             template_name,
             source_chunk=chunk_text,
-            draft_translation=draft_translation or "",
+            draft_translation=draft_translation or "(no draft translation provided)",
             glossary=glossary or "(none provided)",
             style=style or "(none provided)",
             entities=entities or "(none provided)",

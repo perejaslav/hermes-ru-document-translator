@@ -58,6 +58,7 @@ class MockBackend(TranslationBackend):
         entities: str | None = None,
         previous_context: str | None = None,
         next_context: str | None = None,
+        draft_translation: str | None = None,
     ) -> BackendResult:
         return self._mock_translate(chunk_text, wave)
 

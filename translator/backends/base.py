@@ -56,6 +56,7 @@ class TranslationBackend(ABC):
         entities: str | None = None,
         previous_context: str | None = None,
         next_context: str | None = None,
+        draft_translation: str | None = None,
     ) -> BackendResult:
         """Convenience wrapper for chunk translation.
 
@@ -68,6 +69,7 @@ class TranslationBackend(ABC):
             entities: Entity register content
             previous_context: Last 2 sentences of previous chunk
             next_context: First 2 sentences of next chunk
+            draft_translation: Wave 1 result (required for wave 2)
 
         Returns:
             BackendResult with translated text

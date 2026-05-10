@@ -47,6 +47,7 @@ class SequentialBackend(TranslationBackend):
         entities: str | None = None,
         previous_context: str | None = None,
         next_context: str | None = None,
+        draft_translation: str | None = None,
     ) -> BackendResult:
         if self.api_backend is None:
             from .mock import MockBackend
@@ -55,9 +56,11 @@ class SequentialBackend(TranslationBackend):
                 chunk_text, chunk_id, wave,
                 glossary=glossary, style=style, entities=entities,
                 previous_context=previous_context, next_context=next_context,
+                draft_translation=draft_translation,
             )
         return self.api_backend.translate_chunk(
             chunk_text, chunk_id, wave,
             glossary=glossary, style=style, entities=entities,
             previous_context=previous_context, next_context=next_context,
+            draft_translation=draft_translation,
         )
