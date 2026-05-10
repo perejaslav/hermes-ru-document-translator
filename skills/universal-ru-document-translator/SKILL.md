@@ -95,7 +95,7 @@ python scripts/run_pipeline.py status <project_slug>
 | Backend | Description |
 |---|---|
 | `mock` | Offline testing — deterministic pseudo-translation, always works |
-| `hermes_delegate` | Hermes runtime-only / experimental — not available via `python scripts/run_pipeline.py` |
+| `hermes_delegate` | Hermes runtime-only production backend — requires Hermes Agent runtime (not available via ``python scripts/run_pipeline.py``) |
 | `minimax_api` | Direct MiniMax API backend (experimental/stub, depends on build) |
 | `sequential` | Single-threaded fallback — safe for testing |
 
