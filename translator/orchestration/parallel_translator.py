@@ -73,6 +73,13 @@ class ParallelTranslator:
         else:
             backend = get_backend(backend_name)
 
+        # Healthcheck — fail fast before any chunk work
+        if not backend.healthcheck():
+            raise RuntimeError(
+                f"Backend '{backend_name}' failed healthcheck. "
+                "Check backend configuration before translation."
+            )
+
         # Load foundation files
         foundation = self._load_foundation()
 
@@ -268,6 +275,10 @@ class ParallelTranslator:
                     else:
                         chunk_meta[status_key] = "failed"
                         chunk_meta[error_key] = res.error
+                        # Clear stale metadata from previous successful runs
+                        chunk_meta.pop(backend_key, None)
+                        chunk_meta.pop(model_key, None)
+                        chunk_meta.pop(ts_key, None)
                     break
 
         # Project-level metadata (from first successful result)
