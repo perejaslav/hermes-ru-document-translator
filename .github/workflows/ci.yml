@@ -28,7 +28,7 @@ jobs:
           .venv/bin/pip install -e ".[dev]"
 
       - name: Run doctor
-        run: .venv/bin/python scripts/run_pipeline.py doctor
+        run: PYTHONPATH=. .venv/bin/python scripts/run_pipeline.py doctor
 
       - name: Run pytest
-        run: .venv/bin/pytest
+        run: PYTHONPATH=. .venv/bin/pytest
