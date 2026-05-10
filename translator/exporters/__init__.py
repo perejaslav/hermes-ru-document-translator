@@ -17,6 +17,19 @@ def get_exporters():
     ]
 
 
+def _require_export_path(result: dict, fmt: str) -> Path:
+    """Return exported path or raise a useful error from an exporter result dict."""
+    if not isinstance(result, dict):
+        raise RuntimeError(f"{fmt} export returned invalid result: {type(result).__name__}")
+
+    if result.get("status") == "success" and result.get("path"):
+        return Path(result["path"])
+
+    status = result.get("status", "failed")
+    error = result.get("error") or result.get("stderr") or "unknown export error"
+    raise RuntimeError(f"{fmt} export {status}: {error}")
+
+
 def export_md(project_dir: Path) -> Path:
     """Export translated.md (copy from output/ to output/ as-is."""
     src = project_dir / "output" / "translated.md"
@@ -39,7 +52,7 @@ def export_txt(project_dir: Path) -> Path:
     # Convert markdown to plain text
     output_path = project_dir / "output" / "translated.txt"
     result = txt.export(md_content, output_path)
-    return Path(result["path"])
+    return _require_export_path(result, "txt")
 
 
 def export_docx(project_dir: Path) -> Path:
@@ -54,7 +67,7 @@ def export_docx(project_dir: Path) -> Path:
 
     output_path = project_dir / "output" / "translated.docx"
     result = docx.export(md_content, output_path)
-    return Path(result["path"])
+    return _require_export_path(result, "docx")
 
 
 def export_html(project_dir: Path) -> Path:
@@ -69,7 +82,7 @@ def export_html(project_dir: Path) -> Path:
 
     output_path = project_dir / "output" / "translated.html"
     result = html.export(md_content, output_path)
-    return Path(result["path"])
+    return _require_export_path(result, "html")
 
 
 def export_pdf(project_dir: Path) -> Path:
@@ -84,16 +97,11 @@ def export_pdf(project_dir: Path) -> Path:
 
     output_path = project_dir / "output" / "translated.pdf"
 
-    # Check pandoc availability
-    import shutil
-    if not shutil.which("pandoc"):
-        raise RuntimeError("pandoc not found — PDF export unavailable")
-
+    result = pdf.export(md_content, output_path)
     try:
-        result = pdf.export(md_content, output_path)
-        return Path(result["path"])
-    except Exception as e:
-        raise RuntimeError(f"PDF export failed: {e}")
+        return _require_export_path(result, "pdf")
+    except RuntimeError as e:
+        raise RuntimeError(f"PDF export failed: {e}") from e
 
 
 # Alias for backward compatibility
