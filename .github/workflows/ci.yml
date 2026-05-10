@@ -22,13 +22,11 @@ jobs:
       - name: Create virtual environment
         run: python -m venv .venv
 
-      - name: Install package with dev dependencies
-        run: |
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install pytest PyMuPDF python-docx beautifulsoup4 lxml markdown-it-py html2text chardet
+      - name: Install dependencies
+        run: .venv/bin/pip install --upgrade pip pytest PyMuPDF python-docx beautifulsoup4 lxml markdown-it-py html2text chardet
 
       - name: Run doctor
-        run: .venv/bin/python scripts/run_pipeline.py doctor
+        run: PYTHONPATH=. .venv/bin/python scripts/run_pipeline.py doctor
 
       - name: Run pytest
-        run: .venv/bin/pytest
+        run: PYTHONPATH=. .venv/bin/pytest
