@@ -8,7 +8,7 @@ Usage:
     python3 scripts/run_pipeline.py prepare /path/to/doc.md
     python3 scripts/run_pipeline.py translate <project_slug> --backend mock
     python3 scripts/run_pipeline.py qa <project_slug>
-    python3 scripts/run_pipeline.py repair <project_slug> --backend mock
+    python3 scripts/run_pipeline.py repair <project_slug> [--backend <name>]
     python3 scripts/run_pipeline.py merge <project_slug>
     python3 scripts/run_pipeline.py export <project_slug>
     python3 scripts/run_pipeline.py report <project_slug>
@@ -298,6 +298,18 @@ def cmd_status(project_slug: str):
         qa_done = sum(1 for c in m.get("chunks", []) if c.get("qa_status") == "completed")
         print(f"\n[Chunks] {total} total | wave1: {wave1_done}/{total} | wave2: {wave2_done}/{total} | qa: {qa_done}/{total}")
 
+        # Backend metadata
+        translation = m.get("translation", {})
+        if translation:
+            w1_backend = translation.get("wave1_backend", "?")
+            w1_model = translation.get("wave1_model") or "model unknown"
+            w2_backend = translation.get("wave2_backend", "?")
+            w2_model = translation.get("wave2_model") or "model unknown"
+            print(
+                f"[Backend] wave1={w1_backend} ({w1_model}), "
+                f"wave2={w2_backend} ({w2_model})"
+            )
+
     return 0
 
 
@@ -421,8 +433,10 @@ def cmd_prepare(input_path: str, lang: str = None, force: bool = False):
     print(f"    .venv/bin/python scripts/run_pipeline.py translate {slug} --backend mock")
 
 
-def cmd_translate(project_slug: str, backend: str = "mock", max_workers: int = 3):
+def cmd_translate(project_slug: str, backend: str | None = None, max_workers: int = 3):
     """Run wave1 and wave2 translation for all chunks."""
+    if backend is None:
+        backend = "mock"
     project_dir = _project_dir(project_slug)
     if not project_dir.exists():
         print(f"ERROR: Project not found: {project_dir}")
@@ -544,8 +558,34 @@ def cmd_qa(project_slug: str):
         sys.exit(1)
 
 
-def cmd_repair(project_slug: str, backend: str = "mock"):
-    """Re-run wave2 for chunks flagged in remediation.json."""
+def _infer_repair_backend(manifest: dict, chunk_ids: list[str]) -> str | None:
+    """Determine which backend was used for wave2 from manifest metadata.
+
+    Checks in order:
+    1. manifest-level 'translation.wave2_backend' field
+    2. Individual chunk 'wave2_backend' fields for the flagged chunks
+    Returns None if no backend can be inferred.
+    """
+    translation = manifest.get("translation", {})
+    backend = translation.get("wave2_backend")
+    if backend:
+        return backend
+
+    for chunk in manifest.get("chunks", []):
+        if chunk.get("id") in chunk_ids:
+            backend = chunk.get("wave2_backend")
+            if backend:
+                return backend
+
+    return None
+
+
+def cmd_repair(project_slug: str, backend: str | None = None):
+    """Re-run wave2 for chunks flagged in remediation.json.
+
+    Safety: refuses to auto-default to mock. Explicit --backend mock
+    is still allowed for testing.
+    """
     project_dir = _project_dir(project_slug)
     if not project_dir.exists():
         print(f"ERROR: Project not found: {project_dir}")
@@ -564,7 +604,33 @@ def cmd_repair(project_slug: str, backend: str = "mock"):
         print("No chunks flagged for repair")
         return 0
 
-    print(f"Repairing {len(chunk_issues)} chunks: {project_slug}")
+    # ── Backend safety logic ──────────────────────────────────────────────
+    backend_was_explicit = backend is not None
+
+    manifest_path = project_dir / "chunks" / "manifest.json"
+    if manifest_path.exists():
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+
+        if backend is None:
+            backend = _infer_repair_backend(manifest, list(chunk_issues.keys()))
+
+        if backend is None:
+            print(
+                "ERROR: repair backend unknown. Pass --backend explicitly. "
+                "Refusing to use mock automatically."
+            )
+            sys.exit(1)
+
+        if backend == "mock" and not backend_was_explicit:
+            print(
+                "ERROR: refusing implicit mock repair. "
+                "Pass --backend mock explicitly for tests only."
+            )
+            sys.exit(1)
+    # ── End safety logic ───────────────────────────────────────────────────
+
+    print(f"Repairing {len(chunk_issues)} chunks: {project_slug} (backend: {backend})")
 
     for chunk_id, gates in chunk_issues.items():
         print(f"  {chunk_id}: {', '.join(gates)}")
@@ -835,7 +901,7 @@ Examples:
     parser.add_argument("path", nargs="?", help="Document path or project slug")
     parser.add_argument("--lang", help="Source language (auto-detected if not set)")
     parser.add_argument("--force", action="store_true", help="Overwrite existing project")
-    parser.add_argument("--backend", default="mock", help="Translation backend (default: mock)")
+    parser.add_argument("--backend", default=None, help="Translation backend (default: auto-detect for repair, mock for translate)")
     parser.add_argument("--max-workers", type=int, default=3, help="Max parallel workers (default: 3)")
 
     args = parser.parse_args()

@@ -95,13 +95,15 @@ python scripts/run_pipeline.py status <project_slug>
 | Backend | Description |
 |---|---|
 | `mock` | Offline testing — deterministic pseudo-translation, always works |
-| `hermes_delegate` | Parallel subagent translation via `delegate_task` — main production backend |
-| `minimax_api` | Direct MiniMax API fallback (stub) |
+| `hermes_delegate` | Hermes runtime-only / experimental — not available via `python scripts/run_pipeline.py` |
+| `minimax_api` | Direct MiniMax API backend (experimental/stub, depends on build) |
 | `sequential` | Single-threaded fallback — safe for testing |
 
 **For full cycle testing:** always start with `--backend mock`
 
-**For production:** omit `--backend` to use `hermes_delegate` (default)
+**For production CLI use:** do not use `mock`. Specify a working backend explicitly, e.g. `--backend minimax_api`, when it is configured and passes healthcheck.
+
+`hermes_delegate` is Hermes runtime-only and will fail with `ImportError` when run via `python scripts/run_pipeline.py`.
 
 ---
 
@@ -167,6 +169,8 @@ python scripts/run_pipeline.py repair <project_slug> --backend mock
 ```
 
 Then re-run QA to verify fixes.
+
+**Safety:** `repair` refuses implicit mock backend. Without `--backend`, it reads the backend from manifest.json (chunk-level `wave2_backend` or project-level `translation.wave2_backend`). If the backend is unknown, the command exits with an error to prevent silent overwrite of real translations. Pass `--backend mock` explicitly for testing.
 
 ---
 
