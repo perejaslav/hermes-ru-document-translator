@@ -2,7 +2,7 @@
 
 Python-пакет для автоматического перевода документов на русский язык в Hermes Agent.
 
-**Статус:** v0.2 — unified pipeline (2-wave translation, Foundation, 5 QA gates).
+**Статус:** v0.3 — Hermes-native translation pipeline (agent-orchestrated mode, manifest metadata, sanitizer v2).
 
 ---
 
