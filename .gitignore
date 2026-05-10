@@ -9,7 +9,7 @@ __pycache__/
 # generated translation workspaces / outputs
 translations/
 output/
-state/
+/state/
 *.pdf
 *.docx
 *.html
