@@ -18,4 +18,4 @@ output/
 # local config/secrets
 .env
 .env.*
-*.log
+*.logfoundation/
