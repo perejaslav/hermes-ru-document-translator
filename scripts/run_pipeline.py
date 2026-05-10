@@ -298,6 +298,18 @@ def cmd_status(project_slug: str):
         qa_done = sum(1 for c in m.get("chunks", []) if c.get("qa_status") == "completed")
         print(f"\n[Chunks] {total} total | wave1: {wave1_done}/{total} | wave2: {wave2_done}/{total} | qa: {qa_done}/{total}")
 
+        # Backend metadata
+        translation = m.get("translation", {})
+        if translation:
+            w1_backend = translation.get("wave1_backend", "?")
+            w1_model = translation.get("wave1_model") or "model unknown"
+            w2_backend = translation.get("wave2_backend", "?")
+            w2_model = translation.get("wave2_model") or "model unknown"
+            print(
+                f"[Backend] wave1={w1_backend} ({w1_model}), "
+                f"wave2={w2_backend} ({w2_model})"
+            )
+
     return 0
 
 

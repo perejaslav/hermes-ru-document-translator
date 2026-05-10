@@ -240,21 +240,44 @@ class ParallelTranslator:
         return f"---\nchunk_id: {chunk_id}\nwave: {wave}\nbackend: {backend_name}\ntranslated_at: {datetime.utcnow().isoformat()}Z\n---\n\n"
 
     def _persist_results(self, results: list[ChunkResult], wave: int) -> None:
-        """Update manifest with translation results."""
+        """Update manifest with translation results and backend metadata."""
         manifest_path = self.project_dir / "chunks" / "manifest.json"
         with open(manifest_path) as f:
             manifest = json.load(f)
 
+        from datetime import datetime
+        now_iso = datetime.utcnow().isoformat() + "Z"
         status_key = f"wave{wave}_status"
+        backend_key = f"wave{wave}_backend"
+        model_key = f"wave{wave}_model"
+        ts_key = f"wave{wave}_translated_at"
+        error_key = f"wave{wave}_error"
 
         for chunk_meta in manifest["chunks"]:
             for res in results:
                 if res.chunk_id == chunk_meta["id"]:
                     if res.success:
                         chunk_meta[status_key] = "completed"
+                        if res.result:
+                            chunk_meta[backend_key] = res.result.backend_name
+                            if res.result.model:
+                                chunk_meta[model_key] = res.result.model
+                            chunk_meta[ts_key] = now_iso
+                        # Clean any previous error
+                        chunk_meta.pop(error_key, None)
                     else:
                         chunk_meta[status_key] = "failed"
+                        chunk_meta[error_key] = res.error
                     break
+
+        # Project-level metadata (from first successful result)
+        successful_results = [r for r in results if r.success and r.result]
+        if successful_results:
+            first = successful_results[0].result
+            manifest.setdefault("translation", {})
+            manifest["translation"][f"wave{wave}_backend"] = first.backend_name
+            manifest["translation"][f"wave{wave}_model"] = first.model
+            manifest["translation"][f"wave{wave}_updated_at"] = now_iso
 
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
