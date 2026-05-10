@@ -1,0 +1,60 @@
+version: "0.1.0"
+
+pipeline:
+  # Supported languages (auto-detected if not specified)
+  supported_langs:
+    - en
+    - de
+    - fr
+    - es
+    - it
+    - zh
+    - ja
+    - ko
+    - ar
+    - ru
+    - uk
+    - pl
+    - cs
+    - nl
+
+  # Chunking
+  chunk:
+    target_tokens: 1500
+    max_tokens: 2500
+    min_sentences: 3
+
+  # Output
+  output:
+    guaranteed_formats:
+      - md
+    best_effort_formats:
+      - docx
+      - html
+      - txt
+      - pdf
+
+  # Side-by-side
+  side_by_side:
+    default_mode: "failed"  # never|failed|sample|full
+
+  # Backend (v0.1: only hermes-current and delegate_task)
+  backend: "hermes-current"
+
+  # PDF export (best-effort)
+  pdf_export:
+    enabled: true
+    engine: "xelatex"  # only xelatex supported in v0.1
+
+# NOT IMPLEMENTED IN v0.1 (stubs only)
+kanban:
+  enabled: false
+  max_workers: 3
+  retry_attempts: 2
+
+ocr:
+  enabled: false
+  engine: "tesseract"
+
+cache:
+  enabled: false

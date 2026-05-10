@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+
+# generated translation workspaces / outputs
+translations/
+output/
+state/
+*.pdf
+*.docx
+*.html
+*.txt
+
+# local config/secrets
+.env
+.env.*
+*.log

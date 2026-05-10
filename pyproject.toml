@@ -1,0 +1,30 @@
+[project]
+name = "hermes-translator"
+version = "0.1.0"
+description = "Universal document translator pipeline for Hermes Agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PyMuPDF>=1.27.0",
+    "python-docx>=1.2.0",
+    "beautifulsoup4>=4.14.0",
+    "lxml>=6.0.0",
+    "markdown-it-py>=3.0.0",
+    "html2text>=2025.4.15",
+    "chardet>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

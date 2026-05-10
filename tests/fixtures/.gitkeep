@@ -1,0 +1,9 @@
+"""Test fixtures directory.
+
+Place sample documents here for testing:
+- sample_*.txt
+- sample_*.md
+- sample_*.docx
+- sample_*.html
+- sample_*.pdf
+"""
