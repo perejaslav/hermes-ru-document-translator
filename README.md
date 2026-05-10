@@ -229,6 +229,15 @@ QA не блокирует pipeline — результаты идут в `qa/rem
 | `minimax_api` | Direct MiniMax API fallback (stub) |
 | `sequential` | Однопоточный fallback для безопасного тестирования |
 
+### Sanitizer
+
+Очистка вывода перевода:
+
+- **Reasoning blocks:** `<think>`, `<thinking>`, `<reasoning>` удаляются автоматически (DOTALL, non-greedy, case-insensitive).
+- **Конверсационные обёртки:** `"Вот перевод:"`, `"Here's the translation:"` и др.
+- **CJK-контаминация:** детектируется (threshold 2%). При превышении в выходной файл добавляется `<!-- WARNING -->` комментарий. Текст не удаляется, чтобы не ломать легитимный мультиязычный контент.
+- **Whitespace normalization:** после удаления блоков множественные пустые строки схлопываются.
+
 Для тестирования: `--backend mock`. Для прода: default (hermes_delegate).
 
 ---
