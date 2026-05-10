@@ -143,15 +143,13 @@ class ParallelTranslator:
         previous_context = context.get("previous")
         next_context = context.get("next")
 
-        # For wave2, load wave1 result
+        # For wave2, load wave1 result as draft_translation
+        draft_translation = None
         if wave == 2:
             wave1_path = self.project_dir / "chunks" / "translated" / "wave1" / f"{chunk_id}.md"
             if wave1_path.exists():
-                # Prepend wave1 result for refinement instruction
-                wave1_text = wave1_path.read_text(encoding="utf-8")
-                wave1_text = self._strip_frontmatter(wave1_text)
-                # Add wave1 as reference for the prompt
-                # Actually the backend handles this via its prompt builder
+                draft_translation = wave1_path.read_text(encoding="utf-8")
+                draft_translation = self._strip_frontmatter(draft_translation)
 
         retries = 0
         last_error = None
@@ -167,6 +165,7 @@ class ParallelTranslator:
                     entities=foundation.get("entities"),
                     previous_context=previous_context,
                     next_context=next_context,
+                    draft_translation=draft_translation,
                 )
 
                 # Validate

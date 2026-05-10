@@ -43,6 +43,7 @@ class MiniMaxBackend(TranslationBackend):
         entities: str | None = None,
         previous_context: str | None = None,
         next_context: str | None = None,
+        draft_translation: str | None = None,
     ) -> BackendResult:
         # TODO: implement actual API call
         return self.translate(chunk_text, metadata={"chunk_id": chunk_id, "wave": wave})

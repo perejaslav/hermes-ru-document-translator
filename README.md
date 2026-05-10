@@ -225,7 +225,7 @@ QA не блокирует pipeline — результаты идут в `qa/rem
 | Backend | Назначение |
 |---|---|
 | `mock` | Оффлайн-тестирование, deterministic, всегда работает |
-| `hermes_delegate` | Hermes runtime-only / experimental (не запускается через `python scripts/run_pipeline.py`) |
+| `hermes_delegate` | Hermes runtime-only production backend (не доступен через CLI — только внутри Hermes Agent) |
 | `minimax_api` | Direct MiniMax API backend (experimental/stub, зависит от сборки) |
 | `sequential` | Однопоточный fallback для безопасного тестирования |
 
