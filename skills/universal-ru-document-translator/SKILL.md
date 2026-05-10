@@ -1,12 +1,12 @@
 ---
 name: universal-ru-document-translator
 description: Unified document translation pipeline — 2-wave translation, Foundation stage, 5 QA gates, resumable state. Translates documents to Russian via Hermes Agent or mock backend.
-version: 0.2.0
+version: 0.3.0
 category: document-processing
 trigger: "перевод translate document translation русский ru document pipeline"
 ---
 
-# Universal RU Document Translator — SKILL.md v0.2
+# Universal RU Document Translator — SKILL.md v0.3
 
 ## 1. When to use
 
@@ -15,7 +15,7 @@ Use this skill when the user asks to translate a document, article, book, or tex
 **Supported formats:**
 - `.txt`, `.md`, `.markdown`, `.docx`, `.html`, `.htm`, text-based `.pdf`
 
-**NOT in v0.2:** OCR/scanned PDF, EPUB batch processing, watch-folders, URL input
+**NOT in v0.3:** OCR/scanned PDF, EPUB batch processing, watch-folders, URL input
 
 ---
 
@@ -60,7 +60,8 @@ python scripts/run_pipeline.py doctor
 # 2. Create project from source file
 python scripts/run_pipeline.py prepare /path/to/doc.md
 
-# 3. Translate all chunks (wave1 → wave2)
+# 3a. For production translation: use Agent-Orchestrated mode (see §16)
+# 3b. For CLI testing: translate with mock backend
 python scripts/run_pipeline.py translate <project_slug> --backend mock
 
 # 4. Run 5-gate QA
@@ -95,15 +96,13 @@ python scripts/run_pipeline.py status <project_slug>
 | Backend | Description |
 |---|---|
 | `mock` | Offline testing — deterministic pseudo-translation, always works |
-| `hermes_delegate` | Hermes runtime-only production backend — requires Hermes Agent runtime (not available via ``python scripts/run_pipeline.py``) |
+| `hermes_delegate` | ⚠️ **Legacy/experimental.** Hermes runtime-only. See §16 for production mode |
 | `minimax_api` | Direct MiniMax API backend (experimental/stub, depends on build) |
 | `sequential` | Single-threaded fallback — safe for testing |
 
 **For full cycle testing:** always start with `--backend mock`
 
-**For production CLI use:** do not use `mock`. Specify a working backend explicitly, e.g. `--backend minimax_api`, when it is configured and passes healthcheck.
-
-`hermes_delegate` is Hermes runtime-only and will fail with `ImportError` when run via `python scripts/run_pipeline.py`.
+**For production:** use Agent-Orchestrated mode (§16). Do NOT rely on CLI backends for production translation quality.
 
 ---
 
@@ -228,17 +227,27 @@ The pipeline persists state after every stage. If interrupted:
 
 ---
 
-## 14. For the Agent
+## 14. For the Agent — Production Workflow
 
 When the user asks "translate this document":
 
 1. Run `doctor` first to confirm environment
 2. Run `prepare <source_file>` to create workspace
-3. Run `translate <slug> --backend mock` for full 2-wave mock translation
-4. Run `qa <slug>` — read `qa/remediation.json`
-5. If issues: `repair <slug> --backend mock` then `qa <slug>` again
-6. `merge <slug>` → `export <slug>` → `report <slug>`
-7. Report results to user with file paths
+3. For **production translation** — use Agent-Orchestrated mode (see §16):
+   ```python
+   from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+   orchestrator = AgentOrchestratedTranslator("~/translations/<project_slug>")
+   orchestrator.translate_project()
+   ```
+4. Switch to CLI for deterministic steps:
+   ```bash
+   python scripts/run_pipeline.py qa <slug>
+   python scripts/run_pipeline.py repair <slug> --backend mock  # if needed
+   python scripts/run_pipeline.py merge <slug>
+   python scripts/run_pipeline.py export <slug>
+   python scripts/run_pipeline.py report <slug>
+   ```
+5. Report results to user with file paths
 
 Do NOT start large translations without explicit user confirmation.
 
@@ -252,7 +261,67 @@ If user has old `workspace/` projects, do not migrate automatically — new form
 
 ---
 
-## 16. Pitfalls
+## 16. Agent-Orchestrated Production Mode
+
+**This is the only production-suitable translation mode.**
+
+### Architecture
+
+```
+Hermes Agent (orchestration runtime)
+    │
+    ├── reads/writes project files
+    ├── calls delegate_task() for each chunk/wave
+    │
+    └── Pipeline (deterministic infrastructure):
+        prepare → translate → qa → merge → export → report
+```
+
+### Why not CLI backend?
+
+`delegate_task` is a Hermes Agent **runtime capability**, not a Python library function. It is NOT available from:
+- `terminal()` subprocesses
+- `execute_code()` sandbox
+- standalone `python scripts/run_pipeline.py`
+
+Attempting to use `hermes_delegate` backend from CLI will fail with a healthcheck error by design.
+
+### How to use from Hermes Agent
+
+```python
+# This code runs inside Hermes Agent (via execute_code or embedded workflow)
+from translator.orchestration.agent_orchestrated import (
+    AgentOrchestratedTranslator,
+    require_delegate_task,
+)
+
+# Verify we're in Hermes runtime (raises clear error if not)
+require_delegate_task()
+
+# Create orchestrator
+orchestrator = AgentOrchestratedTranslator("~/translations/<project_slug>")
+
+# Run all waves
+orchestrator.translate_project()
+```
+
+### Verification after orchestrated translation
+
+- [ ] `chunks/translated/wave1/<chunk_id>.md` exists
+- [ ] `chunks/translated/wave2/<chunk_id>.md` exists
+- [ ] Manifest shows `"wave1_backend": "agent_orchestrated"`
+- [ ] Manifest shows `"wave2_backend": "agent_orchestrated"`
+- [ ] `hermes-translator qa <slug>` passes all gates
+- [ ] No `<think>` blocks in output
+- [ ] No CJK contamination
+
+### hermes_delegate backend status
+
+The `hermes_delegate` backend (backends/hermes_delegate.py) is preserved for reference but **deprecated for standalone CLI use**. It is conceptually correct but architecturally incompatible with subprocess execution. Use `AgentOrchestratedTranslator` instead.
+
+---
+
+## 17. Pitfalls
 
 ### Manifest-based chunk tracking
 Chunk status is stored in `chunks/manifest.json`, NOT in filenames. Always read manifest to determine which chunks need translation.
@@ -269,9 +338,15 @@ Hermes subagent output passes through a sanitizer that strips conversational wra
 ### Mock backend is deterministic
 Mock backend adds `[RU]` to headings and `<!-- refined -->` to wave2 output. This is intentional for test repeatability.
 
+### agent_orchestrated.py is NOT a CLI entrypoint
+Do NOT run `translator/orchestration/agent_orchestrated.py` directly. It must be imported and called from within Hermes Agent runtime.
+
+### delegate_task availability
+`delegate_task` is NOT available in `execute_code()` sandbox. The `AgentOrchestratedTranslator` must be used from a context where delegate_task is a direct tool, not through the limited hermes_tools sandbox.
+
 ---
 
-## 17. Quick Reference
+## 18. Quick Reference
 
 ```bash
 # Full mock cycle (for testing)
@@ -288,10 +363,18 @@ python scripts/run_pipeline.py report $SLUG
 python scripts/run_pipeline.py status $SLUG
 ```
 
+```python
+# Production translation from Hermes Agent
+from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+orchestrator = AgentOrchestratedTranslator("~/translations/my_project")
+orchestrator.translate_project()
+```
+
 ---
 
-## 18. References
+## 19. References
 
+- `docs/agent-orchestrated-mode.md` — full architecture documentation
 - `references/pipeline-stages.md` — detailed stage definitions
 - `references/directory-structure.md` — canonical layout
 - `references/state-schema.md` — status.json schema
