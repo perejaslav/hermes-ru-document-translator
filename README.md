@@ -1,56 +1,60 @@
 # Hermes Universal Document Translator
 
-Python-пакет для автоматического перевода документов на русский язык.
+Python-пакет для автоматического перевода документов на русский язык в Hermes Agent.
 
-**Статус: v0.1 Direct MVP**
+**Статус:** v0.1 Direct MVP.
 
 ## Быстрый старт
 
 ```bash
 source ~/hermes-translator/.venv/bin/activate
-python3 ~/hermes-translator/scripts/run_pipeline.py /path/to/document.[ext]
+python3 ~/hermes-translator/scripts/run_pipeline.py doctor
 ```
+
+## Поддерживаемые форматы v0.1
+
+- `.txt`
+- `.md`
+- `.markdown`
+- `.docx`
+- `.html`
+- text-based `.pdf`
+
+## Не поддерживается в v0.1
+
+- EPUB
+- OCR
+- batch directories
+- watch-folder
+- cron
+- provider-api
+- pixel-perfect PDF
 
 ## Структура
 
-```
+```text
 hermes-translator/
-├── config.yaml           — конфигурация пайплайна
-├── scripts/              — выполняемые скрипты
-│   ├── run_pipeline.py   — главный раннер
-│   ├── ingest.py         — копирование в workspace
-│   ├── extract.py        — извлечение из формата
-│   ├── normalize.py      — нормализация Markdown
-│   ├── protect_spans.py  — защита непереводимого
-│   ├── assign_block_ids.py
-│   ├── build_glossary_inputs.py
-│   ├── segment.py        — чанкинг
-│   ├── qa_chunk.py       — QA-проверки
-│   ├── merge.py          — сборка результата
-│   ├── export.py         — экспорт в форматы
-│   └── final_report.py
+├── config.yaml
+├── scripts/
+├── skills/universal-ru-document-translator/
 ├── translator/
-│   ├── extractors/       — модули извлечения
-│   ├── exporters/        — модули экспорта
-│   ├── qa/               — QA-проверки
-│   ├── state/            — управление состоянием
-│   └── kanban/          — ЗАГЛУШКА (v0.2+)
 └── tests/
 ```
 
-## Зависимости
+## Гарантированные результаты
 
-- Python >= 3.11
-- PyMuPDF, python-docx, BeautifulSoup4, lxml, markdown-it-py
+- `output/translated.md`
+- `output/glossary.md`
+- `output/translation_report.md`
+- `state/status.json`
 
-## Поддерживаемые форматы (v0.1)
+## Best-effort export
 
-`.txt` `.md` `.markdown` `.docx` `.html` text-based `.pdf`
+- DOCX
+- HTML
+- TXT
+- PDF
 
-## Не поддерживаются в v0.1
+## License
 
-EPUB, OCR, batch, watch-folder, cron, provider-api — заглушки или отложено.
-
-## v0.2+ планируется
-
-EPUB, OCR (tesseract), batch directories, watch-folder, kanban, provider-api.
+Not specified yet.
