@@ -35,6 +35,8 @@ https://github.com/perejaslav/hermes-ru-document-translator
 
 python3 --version
 git --version
+df -h ~
+command -v hermes || echo "Hermes Agent not found"
 
 Если не хватает базовых пакетов, установить:
 
@@ -98,7 +100,11 @@ cd ~/hermes-translator
 git clone https://github.com/perejaslav/hermes-ru-document-translator.git
 cd hermes-ru-document-translator
 
-# 2. Создать виртуальное окружение и установить зависимости
+# 2. Установить системные зависимости
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip pandoc poppler-utils
+
+# 3. Создать виртуальное окружение и установить зависимости
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
@@ -113,7 +119,7 @@ cp -r skills/universal-ru-document-translator ~/.hermes/skills/
 
 ```bash
 python scripts/run_pipeline.py doctor
-pytest
+.venv/bin/python -m pytest
 ```
 
 ## Быстрый пример
@@ -122,7 +128,7 @@ pytest
 python scripts/run_pipeline.py prepare examples/sample_python_intro/source.md
 ```
 
-После этого в рабочей директории появится `chunks/source/` и `status.json`.
+После этого результат появится в `~/translations/<project_slug>/`, а не в рабочей директории.
 
 ## Структура выходных файлов
 
@@ -152,6 +158,13 @@ python scripts/run_pipeline.py prepare examples/sample_python_intro/source.md
 - provider-api
 - pixel-perfect PDF
 - Kanban-доска
+
+## Uninstall / Удаление
+
+```bash
+rm -rf ~/hermes-translator
+rm -rf ~/.hermes/skills/universal-ru-document-translator
+```
 
 ## License
 
