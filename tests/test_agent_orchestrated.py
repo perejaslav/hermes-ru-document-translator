@@ -557,3 +557,212 @@ def test_module_imports_without_crashing():
     # This should not raise — the module must not import hermes_tools at top level
     from translator.orchestration import agent_orchestrated  # noqa: F811
     assert agent_orchestrated is not None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tests: manifest metadata contracts
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_wave1_metadata_written_to_chunk(project_dir, fake_delegate):
+    """translate_wave(1) writes chunk-level metadata (backend, model, timestamp)."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(1)
+
+    manifest_path = project_dir / "chunks" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    chunk = manifest["chunks"][0]
+
+    assert chunk["wave1_status"] == "completed"
+    assert chunk["wave1_backend"] == "agent_orchestrated"
+    assert chunk["wave1_model"] == "subagent"
+    assert "wave1_translated_at" in chunk
+    assert "wave1_error" not in chunk
+
+
+def test_wave1_does_not_write_wave2_metadata(project_dir, fake_delegate):
+    """translate_wave(1) does NOT write wave2 chunk-level metadata."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(1)
+
+    manifest_path = project_dir / "chunks" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    chunk = manifest["chunks"][0]
+
+    assert "wave2_backend" not in chunk
+    assert "wave2_model" not in chunk
+    assert "wave2_translated_at" not in chunk
+    assert chunk.get("wave2_status") == "pending"
+
+
+def test_wave1_project_metadata(project_dir, fake_delegate):
+    """translate_wave(1) writes project-level translation.wave1_backend."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(1)
+
+    manifest = json.loads(
+        (project_dir / "chunks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    t = manifest.get("translation", {})
+
+    assert t["wave1_backend"] == "agent_orchestrated"
+    assert t["wave1_model"] == "subagent"
+    assert "wave1_updated_at" in t
+    # wave2 should NOT appear
+    assert "wave2_backend" not in t
+    assert "wave2_model" not in t
+
+
+def test_wave1_does_not_create_project_wave2(project_dir, fake_delegate):
+    """translate_wave(1) does not emit project-level wave2 metadata."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(1)
+
+    manifest = json.loads(
+        (project_dir / "chunks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    t = manifest.get("translation", {})
+
+    assert "wave2_backend" not in t
+    assert "wave2_model" not in t
+    assert "wave2_updated_at" not in t
+
+
+def test_wave2_metadata_written_to_chunk(project_dir, fake_delegate):
+    """translate_wave(2) writes chunk-level wave2 metadata only."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    # Prepare wave1 draft
+    w1_path = project_dir / "chunks" / "translated" / "wave1" / "chunk_001.md"
+    w1_path.write_text("---\nchunk_id: chunk_001\n---\n\nDraft.", encoding="utf-8")
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(2)
+
+    manifest = json.loads(
+        (project_dir / "chunks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    chunk = manifest["chunks"][0]
+
+    assert chunk["wave2_status"] == "completed"
+    assert chunk["wave2_backend"] == "agent_orchestrated"
+    assert chunk["wave2_model"] == "subagent"
+    assert "wave2_translated_at" in chunk
+    assert "wave2_error" not in chunk
+
+
+def test_wave2_project_metadata(project_dir, fake_delegate):
+    """translate_wave(2) writes project-level translation.wave2_backend."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    w1_path = project_dir / "chunks" / "translated" / "wave1" / "chunk_001.md"
+    w1_path.write_text("---\nchunk_id: chunk_001\n---\n\nDraft.", encoding="utf-8")
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(2)
+
+    manifest = json.loads(
+        (project_dir / "chunks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    t = manifest.get("translation", {})
+
+    assert t["wave2_backend"] == "agent_orchestrated"
+    assert t["wave2_model"] == "subagent"
+    assert "wave2_updated_at" in t
+
+
+def test_failed_chunk_clears_metadata(project_dir):
+    """Failed chunk clears stale backend/model/timestamp and writes error."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    def failing(goal=None, context=None, **kwargs):
+        raise ValueError("Simulated failure")
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=failing,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        orch.translate_wave(1)
+
+    manifest = json.loads(
+        (project_dir / "chunks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    chunk = manifest["chunks"][0]
+
+    assert chunk["wave1_status"] == "failed"
+    assert "Simulated failure" in chunk["wave1_error"]
+    assert "delegate_task failed" in chunk["wave1_error"]
+    assert "wave1_backend" not in chunk
+    assert "wave1_model" not in chunk
+    assert "wave1_translated_at" not in chunk
+
+
+def test_repair_updates_wave2_metadata(project_dir, fake_delegate):
+    """repair_project() updates wave2_backend and wave2_translated_at in manifest."""
+    from translator.orchestration.agent_orchestrated import AgentOrchestratedTranslator
+
+    # Create remediation file
+    remediation = {"chunks": {"chunk_001": ["g3s — sentence too long"]}}
+    (project_dir / "qa" / "remediation.json").write_text(
+        json.dumps(remediation), encoding="utf-8"
+    )
+
+    # Create wave2 draft
+    w2_path = project_dir / "chunks" / "translated" / "wave2" / "chunk_001.md"
+    w2_path.write_text("---\nchunk_id: chunk_001\n---\n\nOld wave2.", encoding="utf-8")
+
+    with patch(
+        "translator.orchestration.agent_orchestrated.require_delegate_task",
+        return_value=fake_delegate,
+    ):
+        orch = AgentOrchestratedTranslator(project_dir)
+        result = orch.repair_project()
+
+    assert result["success"] == 1
+
+    manifest = json.loads(
+        (project_dir / "chunks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    chunk = manifest["chunks"][0]
+
+    assert chunk["wave2_status"] == "completed"
+    assert chunk["wave2_backend"] == "agent_orchestrated"
+    assert chunk["wave2_model"] == "subagent"
+    assert "wave2_translated_at" in chunk
+
+    t = manifest.get("translation", {})
+    assert t["wave2_backend"] == "agent_orchestrated"
+    assert t["wave2_model"] == "subagent"
+    assert "wave2_updated_at" in t

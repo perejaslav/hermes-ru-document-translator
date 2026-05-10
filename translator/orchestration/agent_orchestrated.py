@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,15 @@ def is_runtime_available() -> bool:
         return True
     except RuntimeError:
         return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Timestamp helper
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _now_iso() -> str:
+    """Return current UTC time in ISO 8601 format."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -222,9 +232,9 @@ def _strip_frontmatter(text: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class AgentOrchestratedTranslator:
-    """Translate a prepared project via Heres Agent subagent delegation.
+    """Translate a prepared project via Hermes Agent subagent delegation.
 
-    This class must be instantiated and used ONLY inside Heres Agent runtime
+    This class must be instantiated and used ONLY inside Hermes Agent runtime
     (i.e., where ``delegate_task`` is available).
     """
 
@@ -295,14 +305,16 @@ class AgentOrchestratedTranslator:
                     "warnings": result.get("warnings", []),
                 }
                 results["success"] += 1
-                chunk[status_key] = "completed"
+                self._mark_chunk_completed(chunk, wave)
             except Exception as exc:
                 results["chunks"][chunk_id] = {
                     "status": "failed",
                     "error": str(exc),
                 }
-                chunk[status_key] = "failed"
+                self._mark_chunk_failed(chunk, wave, str(exc))
 
+        if results["success"] > 0:
+            self._mark_project_wave_metadata(manifest, wave)
         self._save_manifest(manifest)
         return results
 
@@ -477,6 +489,10 @@ class AgentOrchestratedTranslator:
         remediation = _read_json(remediation_path)
         affected = remediation.get("chunks", {})
 
+        # Load manifest to update chunk metadata
+        manifest = self._load_manifest()
+        chunks_map = {c["id"]: c for c in manifest.get("chunks", [])}
+
         results: dict[str, Any] = {"chunks": {}, "total": 0, "success": 0}
 
         for chunk_id, notes in affected.items():
@@ -494,12 +510,22 @@ class AgentOrchestratedTranslator:
                     "warnings": result.get("warnings", []),
                 }
                 results["success"] += 1
+                # Update manifest chunk metadata
+                chunk = chunks_map.get(chunk_id)
+                if chunk is not None:
+                    self._mark_chunk_completed(chunk, 2)
             except Exception as exc:
                 results["chunks"][chunk_id] = {
                     "status": "failed",
                     "error": str(exc),
                 }
+                chunk = chunks_map.get(chunk_id)
+                if chunk is not None:
+                    self._mark_chunk_failed(chunk, 2, str(exc))
 
+        if results["success"] > 0:
+            self._mark_project_wave_metadata(manifest, 2)
+        self._save_manifest(manifest)
         return results
 
     # ── Internals ──────────────────────────────────────────────────────
@@ -511,15 +537,48 @@ class AgentOrchestratedTranslator:
         return _read_json(path)
 
     def _save_manifest(self, manifest: dict):
-        # Update translation metadata
-        translation = manifest.setdefault("translation", {})
-        translation["wave1_backend"] = "agent_orchestrated"
-        translation["wave1_model"] = "subagent"
-        translation["wave2_backend"] = "agent_orchestrated"
-        translation["wave2_model"] = "subagent"
-
+        """Persist manifest to disk without injecting metadata — callers must update first."""
         path = self.project_dir / _MANIFEST_PATH
         _write_json(path, manifest)
+
+    # ── Chunk-level metadata helpers ────────────────────────────────────
+
+    def _mark_chunk_completed(self, chunk: dict, wave: int):
+        """Update chunk metadata for successful translation."""
+        status_key = f"wave{wave}_status"
+        backend_key = f"wave{wave}_backend"
+        model_key = f"wave{wave}_model"
+        ts_key = f"wave{wave}_translated_at"
+        error_key = f"wave{wave}_error"
+
+        chunk[status_key] = "completed"
+        chunk[backend_key] = "agent_orchestrated"
+        chunk[model_key] = "subagent"
+        chunk[ts_key] = _now_iso()
+        chunk.pop(error_key, None)
+
+    def _mark_chunk_failed(self, chunk: dict, wave: int, error: str):
+        """Update chunk metadata for failed translation."""
+        status_key = f"wave{wave}_status"
+        backend_key = f"wave{wave}_backend"
+        model_key = f"wave{wave}_model"
+        ts_key = f"wave{wave}_translated_at"
+        error_key = f"wave{wave}_error"
+
+        chunk[status_key] = "failed"
+        chunk[error_key] = error
+        chunk.pop(backend_key, None)
+        chunk.pop(model_key, None)
+        chunk.pop(ts_key, None)
+
+    # ── Project-level metadata helper ───────────────────────────────────
+
+    def _mark_project_wave_metadata(self, manifest: dict, wave: int):
+        """Record backend metadata at project level for a completed wave."""
+        translation = manifest.setdefault("translation", {})
+        translation[f"wave{wave}_backend"] = "agent_orchestrated"
+        translation[f"wave{wave}_model"] = "subagent"
+        translation[f"wave{wave}_updated_at"] = _now_iso()
 
     @staticmethod
     def _extract_delegate_output(delegate_result: Any) -> str:
