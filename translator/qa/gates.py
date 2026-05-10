@@ -475,19 +475,44 @@ def _write_gate_report(path: Path, result: dict) -> None:
 
 
 def _build_remediation(results: dict, manifest: dict) -> dict:
-    """Build remediation.json from gate results."""
+    """Build remediation.json from gate results.
+
+    For gate6_completeness, generates actionable repair notes.
+    """
     chunk_issues: dict[str, list[str]] = {}
 
     for gate_name, result in results.items():
-        if result.get("details"):
-            for detail in result["details"]:
-                # Extract chunk_id from detail (format: "chunk_XXX: issue")
-                if ": " in detail:
-                    chunk_id = detail.split(": ")[0]
+        if not result.get("details"):
+            continue
+
+        is_completeness = gate_name == "gate6_completeness"
+
+        for detail in result["details"]:
+            # Try chunk_XXX pattern first (gate6 uses "chunk_005: compression ...")
+            m = re.match(r"(chunk_\d+):\s*(.*)", detail)
+            if m:
+                chunk_id = m.group(1)
+                rest = m.group(2)
+                if is_completeness:
+                    # Generate actionable remediation note
+                    note = f"gate6: {rest}; retranslate without summarization; preserve all citations and structure"
+                else:
                     gate_short = gate_name.replace("gate", "g").replace("_", "")[:3]
-                    if chunk_id not in chunk_issues:
-                        chunk_issues[chunk_id] = []
-                    chunk_issues[chunk_id].append(gate_short)
+                    note = f"{gate_short}: {rest}"
+                if chunk_id not in chunk_issues:
+                    chunk_issues[chunk_id] = []
+                chunk_issues[chunk_id].append(note)
+                continue
+
+            # Fallback: old split-format for other gates
+            if ": " in detail:
+                chunk_id = detail.split(": ")[0]
+                if not re.match(r"chunk_\d+$", chunk_id):
+                    continue
+                gate_short = gate_name.replace("gate", "g").replace("_", "")[:3]
+                if chunk_id not in chunk_issues:
+                    chunk_issues[chunk_id] = []
+                chunk_issues[chunk_id].append(gate_short)
 
     gate_summary = {k: {"status": v["status"]} for k, v in results.items()}
 
