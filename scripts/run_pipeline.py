@@ -98,6 +98,8 @@ def cmd_doctor():
         PROJECT_ROOT / "translator" / "exporters",
         PROJECT_ROOT / "translator" / "qa",
         PROJECT_ROOT / "translator" / "state",
+        PROJECT_ROOT / "translator" / "backends",
+        PROJECT_ROOT / "translator" / "orchestration",
         PROJECT_ROOT / "scripts",
     ]
     for d in required_dirs:
