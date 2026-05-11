@@ -396,6 +396,7 @@ def cmd_prepare(input_path: str, lang: str = None, force: bool = False):
         if normalized != raw_text:
             diff_lines = sum(1 for a, b in zip(normalized.splitlines(), raw_text.splitlines()) if a != b)
             canonical_path.write_text(normalized, encoding='utf-8')
+            extracted_text = normalized  # ← sync in-memory for chunking stage
             print(f"  ✓ {diff_lines} plain-text headers converted to ## headers")
         else:
             print(f"  ✓ no plain-text headers found (already normalized)")
