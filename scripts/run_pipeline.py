@@ -837,38 +837,40 @@ def cmd_report(project_slug: str):
 # =============================================================================
 
 def cmd_clean(project_slug: str):
-    """Strip YAML frontmatter and [N] citation markers from output.
+    """Create clean Markdown without YAML frontmatter and [N] citation markers.
 
-    Removes pipeline artifacts from the final merged document:
-    - YAML frontmatter (--- project: ... word_count: ... ---)
-    - All [N] citation markers (brackets with digits)
-
-    The original translated.md is overwritten.
+    Writes to ``output/translated.clean.md`` — does NOT modify
+    ``output/translated.md`` (the canonical output with citations).
     """
     project_dir = _project_dir(project_slug)
     if not project_dir.exists():
         print(f"ERROR: Project not found: {project_dir}")
         sys.exit(1)
 
-    md_path = project_dir / "output" / "translated.md"
-    if not md_path.exists():
-        print(f"ERROR: translated.md not found at {md_path}")
+    src_path = project_dir / "output" / "translated.md"
+    clean_path = project_dir / "output" / "translated.clean.md"
+
+    if not src_path.exists():
+        print(f"ERROR: translated.md not found at {src_path}")
         sys.exit(1)
 
-    text = md_path.read_text(encoding='utf-8')
+    text = src_path.read_text(encoding="utf-8")
     original_len = len(text)
 
-    # Strip YAML frontmatter
-    text = re.sub(r'^---\n.*?\n---\n', '', text, flags=re.DOTALL).strip()
-    # Strip [N] citation markers
-    text = re.sub(r'\[\d+\]', '', text)
+    refs_removed = len(re.findall(r"\[\d+\]", text))
 
-    refs_removed = len(re.findall(r'\[\d+\]', text))
-    md_path.write_text(text, encoding='utf-8')
-    removed = original_len - len(text)
-    print(f"✓ cleaned {project_slug}/output/translated.md")
+    cleaned = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.DOTALL).strip()
+    cleaned = re.sub(r"\[\d+\]", "", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r" +\n", "\n", cleaned)
+
+    clean_path.write_text(cleaned, encoding="utf-8")
+
+    removed = original_len - len(cleaned)
+    print(f"✓ created {project_slug}/output/translated.clean.md")
+    print(f"  original preserved: output/translated.md")
     print(f"  removed {removed} chars (frontmatter + {refs_removed} citations)")
-    print(f"  final size: {len(text):,} chars")
+    print(f"  clean size: {len(cleaned):,} chars")
 
 
 def _ingest_file(input_file: Path) -> str:
