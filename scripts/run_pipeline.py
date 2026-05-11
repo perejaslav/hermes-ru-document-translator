@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import importlib
+import re
 import sys
 import json
 from datetime import datetime
@@ -835,6 +836,41 @@ def cmd_report(project_slug: str):
 # HELPERS
 # =============================================================================
 
+def cmd_clean(project_slug: str):
+    """Strip YAML frontmatter and [N] citation markers from output.
+
+    Removes pipeline artifacts from the final merged document:
+    - YAML frontmatter (--- project: ... word_count: ... ---)
+    - All [N] citation markers (brackets with digits)
+
+    The original translated.md is overwritten.
+    """
+    project_dir = _project_dir(project_slug)
+    if not project_dir.exists():
+        print(f"ERROR: Project not found: {project_dir}")
+        sys.exit(1)
+
+    md_path = project_dir / "output" / "translated.md"
+    if not md_path.exists():
+        print(f"ERROR: translated.md not found at {md_path}")
+        sys.exit(1)
+
+    text = md_path.read_text(encoding='utf-8')
+    original_len = len(text)
+
+    # Strip YAML frontmatter
+    text = re.sub(r'^---\n.*?\n---\n', '', text, flags=re.DOTALL).strip()
+    # Strip [N] citation markers
+    text = re.sub(r'\[\d+\]', '', text)
+
+    refs_removed = len(re.findall(r'\[\d+\]', text))
+    md_path.write_text(text, encoding='utf-8')
+    removed = original_len - len(text)
+    print(f"✓ cleaned {project_slug}/output/translated.md")
+    print(f"  removed {removed} chars (frontmatter + {refs_removed} citations)")
+    print(f"  final size: {len(text):,} chars")
+
+
 def _ingest_file(input_file: Path) -> str:
     """Extract text from supported formats."""
     ext = input_file.suffix.lower()
@@ -968,6 +1004,11 @@ Examples:
             print("ERROR: report requires <project_slug>")
             sys.exit(1)
         cmd_report(args.path)
+    elif cmd == "clean":
+        if not args.path:
+            print("ERROR: clean requires <project_slug>")
+            sys.exit(1)
+        cmd_clean(args.path)
     else:
         print(f"Unknown command: {cmd}")
         parser.print_help()
