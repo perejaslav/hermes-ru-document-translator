@@ -313,3 +313,94 @@ def _extract_sentences(text: str) -> list[str]:
     # Split on sentence-ending punctuation
     parts = re.split(r'(?<=[.!?])\s+', text)
     return [p.strip() for p in parts if p.strip()]
+
+
+def normalize_plain_text_headers(markdown: str) -> str:
+    """Convert plain-text section headers to Markdown ## headers.
+
+    Detects standalone lines that look like section headings:
+    - Surrounded by blank lines
+    - 3-80 characters, starts with uppercase
+    - Does not end with a period
+    - Does not contain citation markers like [N]
+    - Not already a Markdown header
+    - Not inside code blocks, not a table line, not a table caption
+
+    Examples:
+        ``Background`` → ``## Background``
+        ``Political Structure and Dynasties`` → ``## Political Structure and Dynasties``
+    """
+    # Protect code blocks
+    code_map = {}
+    code_block_counter = 0
+
+    def _protect_code(match: re.Match) -> str:
+        nonlocal code_block_counter
+        placeholder = f"__CODE_BLOCK_{code_block_counter}_PH__"
+        code_map[placeholder] = match.group(0)
+        code_block_counter += 1
+        return placeholder
+
+    protected = re.sub(r'(```[\s\S]*?```)', _protect_code, markdown)
+
+    lines = protected.split('\n')
+    result = list(lines)
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Skip: already a header, empty lines, inline code
+        if not stripped:
+            continue
+        if stripped.startswith('#'):
+            continue
+        if stripped.startswith('|') or stripped.endswith('|'):
+            # Table row
+            continue
+        if re.search(r'\[(\d+|[A-Za-z])\]', stripped):
+            # Contains citation marker like [1], [N], [Ref]
+            continue
+        if stripped.startswith('>'):
+            # Blockquote — skip
+            continue
+
+        # Length check
+        if len(stripped) < 3 or len(stripped) > 80:
+            continue
+
+        # Must start with uppercase letter
+        if not stripped[0].isupper():
+            continue
+
+        # Must not end with sentence-ending punctuation
+        if stripped.endswith(('.', '!', '?')):
+            continue
+
+        # Must be standalone (blank line before and after, or start/end of file)
+        has_blank_before = (i == 0) or (lines[i - 1].strip() == '')
+        has_blank_after = (i == len(lines) - 1) or (lines[i + 1].strip() == '')
+
+        if not (has_blank_before and has_blank_after):
+            continue
+
+        # Check it looks like a header (not a fragment)
+        # Must contain mostly letters and spaces
+        alpha_space = sum(1 for c in stripped if c.isalpha() or c.isspace())
+        if alpha_space / max(len(stripped), 1) < 0.6:
+            continue
+
+        # Check not a table caption (line before table row)
+        if i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            if next_line.startswith('|') and next_line.endswith('|'):
+                continue  # This line is a caption, not a header
+
+        # It's a plain-text header — convert
+        result[i] = f"## {stripped}"
+
+    # Restore code blocks
+    final = '\n'.join(result)
+    for placeholder, original in code_map.items():
+        final = final.replace(placeholder, original)
+
+    return final

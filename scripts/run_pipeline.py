@@ -386,8 +386,24 @@ def cmd_prepare(input_path: str, lang: str = None, force: bool = False):
         print(f"  ✗ ingestion failed: {e}")
         sys.exit(1)
 
-    # Stage 2: Foundation (build glossary, style, entities)
-    print("\n[Stage 2: Foundation]")
+    # Stage 3: Header normalization (plain-text → ## headers)
+    print("\n[Stage 2.5: Header Normalization]")
+    canonical_path = project_dir / "chunks" / "source" / "canonical.md"
+    try:
+        from translator.pipeline.chunker import normalize_plain_text_headers as _normalize_headers
+        raw_text = canonical_path.read_text(encoding='utf-8')
+        normalized = _normalize_headers(raw_text)
+        if normalized != raw_text:
+            diff_lines = sum(1 for a, b in zip(normalized.splitlines(), raw_text.splitlines()) if a != b)
+            canonical_path.write_text(normalized, encoding='utf-8')
+            print(f"  ✓ {diff_lines} plain-text headers converted to ## headers")
+        else:
+            print(f"  ✓ no plain-text headers found (already normalized)")
+    except Exception as e:
+        print(f"  ⚠ header normalization warning: {e} (continuing)")
+
+    # Stage 3: Foundation (build glossary, style, entities)
+    print("\n[Stage 3: Foundation]")
     _set_stage(project_dir, "foundation", "in_progress")
     try:
         from translator.pipeline.foundation_builder import build_foundation
@@ -399,8 +415,8 @@ def cmd_prepare(input_path: str, lang: str = None, force: bool = False):
         _set_stage(project_dir, "foundation", "failed", str(e))
         print(f"  ⚠ foundation warning: {e} (continuing)")
 
-    # Stage 3: Chunking (split into chunks with context)
-    print("\n[Stage 3: Chunking]")
+    # Stage 4: Chunking (split into chunks with context)
+    print("\n[Stage 4: Chunking]")
     _set_stage(project_dir, "chunking", "in_progress")
     try:
         from translator.pipeline.chunker import chunk_text, save_chunks

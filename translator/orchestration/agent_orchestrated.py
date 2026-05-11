@@ -476,8 +476,12 @@ class AgentOrchestratedTranslator:
     def repair_project(self) -> dict[str, Any]:
         """Repair chunks flagged by QA.
 
-        Reads ``qa/remediation.json`` and re-translates affected chunks
-        via the repair prompt.
+        Reads ``qa/remediation.json`` and re-translates affected chunks.
+
+        - Chunks with ``gate6:`` notes (completeness/reference failures) use
+          full retranslation from source via ``completeness_retranslation``
+          prompt — NOT the repair prompt with the old wave2 draft.
+        - Other chunks use the standard repair prompt.
 
         Returns:
             Dict with ``chunks`` (per-chunk results) and ``total`` / ``success``.
@@ -500,11 +504,15 @@ class AgentOrchestratedTranslator:
                 continue
             results["total"] += 1
             try:
-                result = self.translate_chunk(
-                    chunk_id,
-                    wave=2,
-                    remediation_notes=notes,
-                )
+                # Gate6 notes = completeness/reference failure → full retranslation
+                if any(note.startswith("gate6:") for note in notes):
+                    result = self._retranslate_chunk_full(chunk_id, notes)
+                else:
+                    result = self.translate_chunk(
+                        chunk_id,
+                        wave=2,
+                        remediation_notes=notes,
+                    )
                 results["chunks"][chunk_id] = {
                     "status": "completed",
                     "warnings": result.get("warnings", []),
@@ -527,6 +535,76 @@ class AgentOrchestratedTranslator:
             self._mark_project_wave_metadata(manifest, 2)
         self._save_manifest(manifest)
         return results
+
+    def _retranslate_chunk_full(self, chunk_id: str, notes: list[str]) -> dict[str, Any]:
+        """Full retranslation from source for completeness gate failures.
+
+        Uses ``completeness_retranslation`` prompt with strict citation and
+        paragraph preservation rules. Does NOT use the existing wave2 draft.
+
+        Args:
+            chunk_id: e.g. ``chunk_001``.
+            notes: Remediation notes to include as context.
+
+        Returns:
+            Dict with ``chunk_id``, ``wave``, ``translation``, ``warnings``.
+        """
+        # ── Load source only (no wave2 draft) ──────────────────────────
+        source_path = self.project_dir / _CHUNK_SOURCE_DIR / f"{chunk_id}.md"
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source chunk not found: {source_path}")
+        source_text = _read_text(source_path)
+        source_body = _strip_frontmatter(source_text)
+
+        # ── Build completeness_retranslation prompt ────────────────────
+        prompt = _build_prompt(
+            "completeness_retranslation",
+            source_chunk=source_body,
+            remediation_notes="\n".join(f"- {n}" for n in notes),
+        )
+
+        # ── Call delegate_task ─────────────────────────────────────────
+        goal_text = prompt
+        context = (
+            f"Hermes Agent subagent translation task.\n"
+            f"Project: {self.project_dir.name}\n"
+            f"Chunk: {chunk_id}, Wave: 2 (completeness retranslation)\n"
+            f"Translate EVERY sentence and preserve EVERY citation from the source."
+        )
+
+        try:
+            delegate_result = self._delegate(
+                goal=goal_text,
+                context=context,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"delegate_task failed for {chunk_id} completeness retranslation: {exc}"
+            ) from exc
+
+        # ── Extract translation from result ────────────────────────────
+        raw_output = self._extract_delegate_output(delegate_result)
+
+        # ── Sanitize ───────────────────────────────────────────────────
+        cleaned, warnings = sanitize_subagent_output(raw_output, chunk_id=chunk_id)
+
+        # ── Write to wave2 (overwrite) ─────────────────────────────────
+        out_path = self.project_dir / _CHUNK_WAVE2_DIR / f"{chunk_id}.md"
+        frontmatter = (
+            f"---\nchunk_id: {chunk_id}\n"
+            f"wave: wave2\n"
+            f"backend: agent_orchestrated\n"
+            f"model: subagent\n"
+            f"note: completeness_retranslation\n---\n\n"
+        )
+        _write_text(out_path, frontmatter + cleaned)
+
+        return {
+            "chunk_id": chunk_id,
+            "wave": 2,
+            "translation": cleaned,
+            "warnings": warnings,
+        }
 
     # ── Internals ──────────────────────────────────────────────────────
 

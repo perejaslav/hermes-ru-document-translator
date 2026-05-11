@@ -80,8 +80,8 @@ class TestGate6Remediation:
         all_notes = " ".join(notes)
         assert "gate6" in all_notes
         assert "compression" in all_notes
-        assert "retranslate without summarization" in all_notes
-        assert "citations and structure" in all_notes
+        assert "full retranslation from source required" in all_notes
+        assert "all source structure" in all_notes
 
     def test_full_chunk_not_in_remediation(self, tmp_path):
         """A well-translated chunk should NOT appear in remediation from gate6."""
@@ -149,4 +149,188 @@ class TestGate6Remediation:
                 # gate6 notes must be actionable
                 if note.startswith("gate6:"):
                     assert "compression" in note
-                    assert "retranslate" in note
+                    assert "retranslation" in note
+                    assert "full retranslation from source required" in note
+
+    # ── Reference loss tests ──────────────────────────────────────────
+
+    def test_reference_loss_3refs_under_70pct_flags_warn(self, tmp_path):
+        """Chunk with 3+ refs and <70% retention generates a reference loss issue."""
+        from translator.qa.gates import _gate_completeness
+
+        proj = tmp_path / "test_project"
+        (proj / "state").mkdir(parents=True)
+        src_dir = proj / "chunks" / "source"
+        src_dir.mkdir(parents=True)
+        w2_dir = proj / "chunks" / "translated" / "wave2"
+        w2_dir.mkdir(parents=True)
+        (proj / "output").mkdir(parents=True)
+        (proj / "output" / "translated.md").write_text("x", encoding="utf-8")
+
+        # Source with 5 references
+        src_text = "Some text [1] with [2] references [3] here [4] and [5] there.\n\nMore content here.\n\nFinal paragraph.\n"
+        (src_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\n---\n\n{src_text}", encoding="utf-8")
+        (src_dir / "canonical.md").write_text(src_text, encoding="utf-8")
+
+        # Translation with only 3 references (< 70%)
+        tr_text = "Some text [1] with [2] references [3] here.\n\nM content here.\n\nFinal para.\n"
+        (w2_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\nwave: wave2\n---\n\n{tr_text}", encoding="utf-8")
+
+        manifest = {
+            "project_slug": "test",
+            "total_chunks": 1,
+            "chunks": [{"id": "chunk_001", "word_count": 20, "wave1_status": "completed", "wave2_status": "completed"}],
+        }
+        (proj / "chunks" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = _gate_completeness(proj, manifest, w2_dir)
+        details_text = " ".join(result.get("details", []))
+        assert "reference loss" in details_text
+        assert "5→3" in details_text or "3" in details_text
+
+    def test_reference_loss_5refs_under_50pct_flags_severe(self, tmp_path):
+        """Chunk with 5+ refs and <50% retention flags severe reference loss."""
+        from translator.qa.gates import _gate_completeness
+
+        proj = tmp_path / "test_project"
+        (proj / "state").mkdir(parents=True)
+        src_dir = proj / "chunks" / "source"
+        src_dir.mkdir(parents=True)
+        w2_dir = proj / "chunks" / "translated" / "wave2"
+        w2_dir.mkdir(parents=True)
+        (proj / "output").mkdir(parents=True)
+        (proj / "output" / "translated.md").write_text("x", encoding="utf-8")
+
+        # Source with 8 references
+        src_text = "Text [1] with [2] many [3] refs [4] here [5] and [6] also [7] there [8].\n\nMore.\n"
+        (src_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\n---\n\n{src_text}", encoding="utf-8")
+        (src_dir / "canonical.md").write_text(src_text, encoding="utf-8")
+
+        # Translation with only 3 references (< 50%)
+        tr_text = "Text [1] with [2] refs [3] here.\n\nMore.\n"
+        (w2_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\nwave: wave2\n---\n\n{tr_text}", encoding="utf-8")
+
+        manifest = {
+            "project_slug": "test",
+            "total_chunks": 1,
+            "chunks": [{"id": "chunk_001", "word_count": 20, "wave1_status": "completed", "wave2_status": "completed"}],
+        }
+        (proj / "chunks" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = _gate_completeness(proj, manifest, w2_dir)
+        details_text = " ".join(result.get("details", []))
+        assert "severe reference loss" in details_text
+        assert result["compressed_chunks"] >= 1  # severe_count
+
+    def test_reference_loss_1_or_2_refs_not_flagged(self, tmp_path):
+        """Chunks with only 1-2 references should NOT be flagged for reference loss."""
+        from translator.qa.gates import _gate_completeness
+
+        proj = tmp_path / "test_project"
+        (proj / "state").mkdir(parents=True)
+        src_dir = proj / "chunks" / "source"
+        src_dir.mkdir(parents=True)
+        w2_dir = proj / "chunks" / "translated" / "wave2"
+        w2_dir.mkdir(parents=True)
+        (proj / "output").mkdir(parents=True)
+        (proj / "output" / "translated.md").write_text("x", encoding="utf-8")
+
+        # Source with 2 references (below threshold)
+        src_text = "Text [1] here [2].\n\nMore content.\n"
+        (src_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\n---\n\n{src_text}", encoding="utf-8")
+        (src_dir / "canonical.md").write_text(src_text, encoding="utf-8")
+
+        # Translation with 0 references (loss but threshold not met)
+        tr_text = "Text here.\n\nMore content.\n"
+        (w2_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\nwave: wave2\n---\n\n{tr_text}", encoding="utf-8")
+
+        manifest = {
+            "project_slug": "test",
+            "total_chunks": 1,
+            "chunks": [{"id": "chunk_001", "word_count": 10, "wave1_status": "completed", "wave2_status": "completed"}],
+        }
+        (proj / "chunks" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = _gate_completeness(proj, manifest, w2_dir)
+        details_text = " ".join(result.get("details", []))
+        assert "reference loss" not in details_text
+
+    def test_reference_loss_appears_in_remediation(self, tmp_path):
+        """Reference loss issues should generate remediation entries with gate6: prefix."""
+        from translator.qa.gates import run_all_gates
+
+        proj = tmp_path / "test_project"
+        (proj / "state").mkdir(parents=True)
+        src_dir = proj / "chunks" / "source"
+        src_dir.mkdir(parents=True)
+        w2_dir = proj / "chunks" / "translated" / "wave2"
+        w2_dir.mkdir(parents=True)
+        (proj / "output").mkdir(parents=True)
+        (proj / "qa").mkdir(parents=True)
+        (proj / "output" / "translated.md").write_text("x", encoding="utf-8")
+
+        src_text = "Text [1] with [2] many [3] refs [4] here [5].\n\nMore.\n"
+        (src_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\n---\n\n{src_text}", encoding="utf-8")
+        (src_dir / "canonical.md").write_text(src_text, encoding="utf-8")
+
+        tr_text = "Text [1] with [2] refs.\n\nMore.\n"
+        (w2_dir / "chunk_001.md").write_text(f"---\nchunk_id: chunk_001\nwave: wave2\n---\n\n{tr_text}", encoding="utf-8")
+
+        manifest = {
+            "project_slug": "test",
+            "total_chunks": 1,
+            "chunks": [{"id": "chunk_001", "word_count": 10, "wave1_status": "completed", "wave2_status": "completed"}],
+        }
+        (proj / "chunks" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        run_all_gates(proj)
+        rem_path = proj / "qa" / "remediation.json"
+        assert rem_path.exists()
+
+        rem = json.loads(rem_path.read_text(encoding="utf-8"))
+        notes = rem.get("chunks", {}).get("chunk_001", [])
+        all_notes = " ".join(notes)
+        assert "gate6:" in all_notes
+        assert "reference loss" in all_notes
+
+    def test_normalize_plain_text_headers_basic(self):
+        """Verify plain-text header normalization."""
+        from translator.pipeline.chunker import normalize_plain_text_headers
+
+        # Basic case
+        result = normalize_plain_text_headers("Some text.\n\nBackground\n\nMore text.")
+        assert "## Background" in result
+
+        # Already has ## — no change
+        result = normalize_plain_text_headers("## Background\n\nText.")
+        assert result == "## Background\n\nText."
+
+        # Ends with period — no change
+        result = normalize_plain_text_headers("Background.\n\nText.")
+        assert "## Background" not in result
+
+        # Contains [N] — no change
+        result = normalize_plain_text_headers("Text [1].\n\nBackground [2]\n\nMore.")
+        assert "## Background" not in result
+
+        # Long multi-word header
+        result = normalize_plain_text_headers("Intro.\n\nPolitical Structure and Dynasties\n\nDetails.")
+        assert "## Political Structure and Dynasties" in result
+
+    def test_normalize_plain_text_headers_code_block(self):
+        """Code blocks must not be affected by header normalization."""
+        from translator.pipeline.chunker import normalize_plain_text_headers
+
+        text = "Text.\n\n```\nBackground\n```\n\nMore."
+        result = normalize_plain_text_headers(text)
+        # The "Background" inside code block stays unchanged
+        assert "```\nBackground\n```" in result or "```  Background  ```" not in result
+
+    def test_normalize_plain_text_headers_table_caption(self):
+        """Line before a table row should not become a header."""
+        from translator.pipeline.chunker import normalize_plain_text_headers
+
+        text = "Some text.\n\nCaption\n| col1 | col2 |\n|------|------|\n| a | b |"
+        result = normalize_plain_text_headers(text)
+        assert "## Caption" not in result
+        assert "Caption" in result  # still there as plain text

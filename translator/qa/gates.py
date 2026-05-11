@@ -363,6 +363,23 @@ def _gate_completeness(project_dir: Path, manifest: dict, wave2_dir: Path) -> di
                 f"{chunk_id}: compression {ratio:.0%} (src={src_chars} → tr={tr_chars} chars{ref_note})"
             )
 
+        # Per-chunk reference parity (independent of compression ratio)
+        if src_refs >= 3:
+            chunk_ref_ratio = tr_refs / src_refs if src_refs > 0 else 1.0
+            if chunk_ref_ratio < 0.5 and src_refs >= 5:
+                # Severe: 5+ source refs, less than 50% retained
+                severe_count += 1
+                issues.append(
+                    f"{chunk_id}: severe reference loss {src_refs}→{tr_refs} "
+                    f"({chunk_ref_ratio:.0%} retained)"
+                )
+            elif chunk_ref_ratio < 0.7:
+                # Moderate: 3+ source refs, less than 70% retained
+                issues.append(
+                    f"{chunk_id}: reference loss {src_refs}→{tr_refs} "
+                    f"({chunk_ref_ratio:.0%} retained)"
+                )
+
     # Global structural checks
     overall_ratio = total_trans_chars / total_source_chars if total_source_chars > 0 else 1.0
     if overall_ratio < 0.6:
@@ -495,7 +512,7 @@ def _build_remediation(results: dict, manifest: dict) -> dict:
                 rest = m.group(2)
                 if is_completeness:
                     # Generate actionable remediation note
-                    note = f"gate6: {rest}; retranslate without summarization; preserve all citations and structure"
+                    note = f"gate6: {rest}; full retranslation from source required; preserve every citation and all source structure"
                 else:
                     gate_short = gate_name.replace("gate", "g").replace("_", "")[:3]
                     note = f"{gate_short}: {rest}"
